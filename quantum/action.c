@@ -47,7 +47,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 int tp_buttons;
 
 #if defined(RETRO_TAPPING) || defined(RETRO_TAPPING_PER_KEY) || (defined(AUTO_SHIFT_ENABLE) && defined(RETRO_SHIFT))
-int retro_tapping_counter = 0;
+bool     retro_tap_primed   = false;
+uint16_t retro_tap_curr_key = 0;
+#    if !defined(NO_ACTION_ONESHOT) && !(defined(AUTO_SHIFT_ENABLE) && defined(RETRO_SHIFT))
+uint8_t retro_tap_curr_mods = 0;
+uint8_t retro_tap_next_mods = 0;
+#    endif
+#    if defined(RETRO_TAPPING_TIMEOUT) && !(defined(AUTO_SHIFT_ENABLE) && defined(RETRO_SHIFT))
+uint16_t retro_last_press_time   = 0;
+uint16_t retro_last_release_time = 0;
+#    endif
 #endif
 
 #if defined(AUTO_SHIFT_ENABLE) && defined(RETRO_SHIFT) && !defined(NO_ACTION_TAPPING)
@@ -77,7 +86,19 @@ void action_exec(keyevent_t event) {
         debug_event(event);
         ac_dprintf("\n");
 #if defined(RETRO_TAPPING) || defined(RETRO_TAPPING_PER_KEY) || (defined(AUTO_SHIFT_ENABLE) && defined(RETRO_SHIFT))
-        retro_tapping_counter++;
+        uint16_t event_keycode = get_event_keycode(event, false);
+        if (event.pressed) {
+            retro_tap_primed   = false;
+            retro_tap_curr_key = event_keycode;
+#    if defined(RETRO_TAPPING_TIMEOUT) && !(defined(AUTO_SHIFT_ENABLE) && defined(RETRO_SHIFT))
+            retro_last_press_time = timer_read();
+#    endif
+        } else if (retro_tap_curr_key == event_keycode) {
+            retro_tap_primed = true;
+#    if defined(RETRO_TAPPING_TIMEOUT) && !(defined(AUTO_SHIFT_ENABLE) && defined(RETRO_SHIFT))
+            retro_last_release_time = timer_read();
+#    endif
+        }
 #endif
     }
 
@@ -531,7 +552,8 @@ void process_action(keyrecord_t *record, action_t action) {
 #    if defined(RETRO_TAPPING) && defined(DUMMY_MOD_NEUTRALIZER_KEYCODE)
                             // Send a dummy keycode to neutralize flashing modifiers
                             // if the key was held and then released with no interruptions.
-                            if (retro_tapping_counter == 2) {
+                            uint16_t ev_kc = get_event_keycode(event, false);
+                            if (retro_tap_primed && retro_tap_curr_key == ev_kc) {
                                 neutralize_flashing_modifiers(get_mods());
                             }
 #    endif
@@ -825,30 +847,46 @@ void process_action(keyrecord_t *record, action_t action) {
 
 #ifndef NO_ACTION_TAPPING
 #    if defined(RETRO_TAPPING) || defined(RETRO_TAPPING_PER_KEY) || (defined(AUTO_SHIFT_ENABLE) && defined(RETRO_SHIFT))
-    if (!is_tap_action(action)) {
-        retro_tapping_counter = 0;
-    } else {
+    if (is_tap_action(action)) {
         if (event.pressed) {
             if (tap_count > 0) {
-                retro_tapping_counter = 0;
+                retro_tap_primed = false;
+            } else {
+#        if !defined(NO_ACTION_ONESHOT) && !(defined(AUTO_SHIFT_ENABLE) && defined(RETRO_SHIFT))
+                retro_tap_curr_mods = retro_tap_next_mods;
+                retro_tap_next_mods = get_mods();
+#        endif
             }
         } else {
+            uint16_t event_keycode = get_event_keycode(event, false);
+#        if !defined(NO_ACTION_ONESHOT) && !(defined(AUTO_SHIFT_ENABLE) && defined(RETRO_SHIFT))
+            uint8_t curr_mods = get_mods();
+#        endif
             if (tap_count > 0) {
-                retro_tapping_counter = 0;
-            } else {
+                retro_tap_primed = false;
+            } else if (retro_tap_curr_key == event_keycode) {
                 if (
 #        ifdef RETRO_TAPPING_PER_KEY
-                    get_retro_tapping(get_event_keycode(record->event, false), record) &&
+                    get_retro_tapping(event_keycode, record) &&
 #        endif
-                    retro_tapping_counter == 2) {
+#        if defined(RETRO_TAPPING_TIMEOUT) && !(defined(AUTO_SHIFT_ENABLE) && defined(RETRO_SHIFT))
+                    retro_last_release_time - retro_last_press_time < RETRO_TAPPING_TIMEOUT &&
+#        endif
+                    retro_tap_primed) {
+#        if !defined(NO_ACTION_ONESHOT) && !(defined(AUTO_SHIFT_ENABLE) && defined(RETRO_SHIFT))
+                    set_oneshot_mods(retro_tap_curr_mods);
+#        endif
 #        if defined(AUTO_SHIFT_ENABLE) && defined(RETRO_SHIFT)
                     process_auto_shift(action.layer_tap.code, record);
 #        else
                     tap_code(action.layer_tap.code);
 #        endif
                 }
-                retro_tapping_counter = 0;
+                retro_tap_primed = false;
             }
+#        if !defined(NO_ACTION_ONESHOT) && !(defined(AUTO_SHIFT_ENABLE) && defined(RETRO_SHIFT))
+            retro_tap_next_mods = curr_mods;
+#        endif
         }
     }
 #    endif

@@ -1,3 +1,5 @@
+*.zip
+
 # Junk files
 *.bak
 *.swp

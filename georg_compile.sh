@@ -2,7 +2,8 @@
 
 set -e
 
-newest_file=$(ls -t zsa_moonlander*.zip | head -1)
+#newest_file=$(ls -t zsa_moonlander*.zip | head -1)
+newest_file=$(ls -t ~/Downloads/zsa_moonlander_main_wwAwn_*.zip | head -1)
 
 unzip $newest_file -d zsa_moonlander_export
 
@@ -31,6 +32,4 @@ cp -r features/ keyboards/zsa/moonlander/keymaps/georg/features
 rm -rf zsa_moonlander_export
 
 echo "Compiling..."
-make zsa/moonlander:georg
-
-
+make zsa/moonlander:georg:flash
